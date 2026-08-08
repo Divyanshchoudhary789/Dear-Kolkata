@@ -294,7 +294,6 @@ const OtpGate = () => {
                         value={digit}
                         onChange={(e) => handleOtpChange(e.target.value, idx)}
                         onKeyDown={(e) => handleOtpKeyDown(e, idx)}
-                        style={{ width: '40px', height: '44px', textAlign: 'center', fontSize: '20px', fontWeight: '700' }}
                         disabled={loading}
                       />
                     ))}
