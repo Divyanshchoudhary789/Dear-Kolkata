@@ -245,7 +245,9 @@ exports.logout = catchAsync(async (req, res, next) => {
     expires: new Date(Date.now() + 10 * 1000),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.JWT_COOKIE_SAMESITE || 'strict'
+    sameSite: process.env.NODE_ENV === 'production'
+      ? (process.env.JWT_COOKIE_SAMESITE || 'none')
+      : (process.env.JWT_COOKIE_SAMESITE || 'strict')
   });
 
   return sendSuccess(res, 200, 'Logged out successfully');
