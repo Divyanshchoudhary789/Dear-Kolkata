@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useCallback, useContext } from 'react';
+import { createContext, useState, useEffect, useCallback, useContext, useRef } from 'react';
 import * as authApiService    from '../api/authApi';
 import * as productApiService from '../api/productApi';
 import * as orderApiService   from '../api/orderApi';
@@ -45,6 +45,9 @@ export const AppProvider = ({ children }) => {
   const [clientProfile, setClientProfile] = useState(
     () => { try { return JSON.parse(localStorage.getItem('dk_user')) || null; } catch { return null; } }
   );
+  const [notifReady, setNotifReady] = useState(false);
+
+  const justLoggedInRef = useRef(false);
 
   // ─── Vendor / Admin sim bar state ───────────────────────────────────────
   const [activeVendorId, setActiveVendorId] = useState(null);
@@ -78,7 +81,16 @@ export const AppProvider = ({ children }) => {
   const [loadingCoupons,  setLoadingCoupons]  = useState(false);
 
   // ─── Notifications (polled) ──────────────────────────────────────────────
-  const notifHook = useNotifications(isLoggedIn);
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setNotifReady(false);
+      return;
+    }
+    const timer = setTimeout(() => setNotifReady(true), 300);
+    return () => clearTimeout(timer);
+  }, [isLoggedIn]);
+
+  const notifHook = useNotifications(notifReady);
 
   // ─── Auth event listener (token expiry) ─────────────────────────────────
   useEffect(() => {
@@ -98,6 +110,10 @@ export const AppProvider = ({ children }) => {
   // ─── Boot: fetch user profile when token exists ──────────────────────────
   useEffect(() => {
     if (!isLoggedIn) return;
+    if (justLoggedInRef.current) {
+      justLoggedInRef.current = false;
+      return;
+    }
     authApiService.getMe()
       .then(res => {
         if (res?.success) {
@@ -274,10 +290,7 @@ export const AppProvider = ({ children }) => {
         setClientProfile(user);
         setIsLoggedIn(true);
         setCurrentRole('client');
-        // Trigger data loads
-        fetchWallet();
-        fetchMyOrders();
-        fetchMyCoupons();
+        justLoggedInRef.current = true;
         return { success: true, isNew: !user.lastLogin };
       }
       return { success: false, error: 'Verification failed' };
@@ -296,8 +309,7 @@ export const AppProvider = ({ children }) => {
         setCurrentUser(user);
         setIsLoggedIn(true);
         setCurrentRole('vendor');
-        // Fetch vendor-specific data after login
-        fetchVendorData();
+        justLoggedInRef.current = true;
         return { success: true };
       }
       return { success: false, error: 'Login failed' };
@@ -316,9 +328,11 @@ export const AppProvider = ({ children }) => {
         setCurrentUser(user);
         setIsLoggedIn(true);
         setCurrentRole('admin');
-        // Pre-load admin data
-        fetchAdminVendors();
-        fetchAdminOrders();
+        justLoggedInRef.current = true;
+        setTimeout(() => {
+          fetchAdminVendors();
+          fetchAdminOrders();
+        }, 150);
         return { success: true };
       }
       return { success: false, error: 'Login failed' };
