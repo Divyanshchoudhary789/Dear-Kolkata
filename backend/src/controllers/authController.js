@@ -17,7 +17,9 @@ const sendTokenResponse = (user, statusCode, res, message) => {
     expires: new Date(Date.now() + (parseInt(process.env.JWT_COOKIE_EXPIRE) || 30) * 24 * 60 * 60 * 1000),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.JWT_COOKIE_SAMESITE || 'strict'
+    sameSite: process.env.NODE_ENV === 'production'
+      ? (process.env.JWT_COOKIE_SAMESITE || 'none')
+      : (process.env.JWT_COOKIE_SAMESITE || 'strict')
   };
 
   // Remove password and OTP from output
