@@ -75,6 +75,15 @@ connectDatabase();
 const { initScheduledJobs } = require('./src/jobs/payoutScheduler');
 setTimeout(() => initScheduledJobs(), 5000);
 
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Dear Kolkata Backend is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.status(200).json({
     success: true,
