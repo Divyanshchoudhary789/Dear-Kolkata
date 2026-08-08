@@ -1,0 +1,41 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Uploads
+uploads/
+
+# Build
+dist/
+build/
+
+# Testing
+coverage/
+
+# Misc
+*.pem
+*.key
+*.crt
+API_INTEGRATION_GUIDE.md
+IMPLEMENTATION_STATUS.md
