@@ -54,6 +54,8 @@ const returnRequestSchema = new mongoose.Schema({
   refundAmount: Number
 }, { _id: false });
 
+const Counter = require('./Counter');
+
 const orderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
@@ -185,10 +187,14 @@ orderSchema.index({ 'returnRequest.status': 1 });
 // Mongoose 8/9 compatible pre-save hook (no next() — return Promise)
 orderSchema.pre('save', async function() {
   if (this.isNew) {
-    const count = await mongoose.model('Order').countDocuments();
+    const counter = await Counter.findOneAndUpdate(
+      { _id: 'orderNumber' },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
     const timestamp = Date.now().toString().slice(-6);
-    this.orderNumber = `DK-${timestamp}-${String(count + 1).padStart(4, '0')}`;
-    
+    this.orderNumber = `DK-${timestamp}-${String(counter.seq).padStart(4, '0')}`;
+
     // Initialize status timeline
     this.statusTimeline = [{
       status: 'Placed',

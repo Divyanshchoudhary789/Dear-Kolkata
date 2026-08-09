@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const Vendor = require('../models/Vendor');
+const TokenBlacklist = require('../models/TokenBlacklist');
+const jwt = require('jsonwebtoken');
 const ApiError = require('../utils/apiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const catchAsync = require('../utils/catchAsync');
@@ -19,7 +21,7 @@ const sendTokenResponse = (user, statusCode, res, message) => {
     secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production'
       ? (process.env.JWT_COOKIE_SAMESITE || 'none')
-      : (process.env.JWT_COOKIE_SAMESITE || 'strict')
+      : 'lax'
   };
 
   // Remove password and OTP from output
@@ -237,20 +239,71 @@ exports.adminLogin = catchAsync(async (req, res, next) => {
 
 /**
  * @route  POST /api/auth/logout
- * @desc   Logout - clear cookie
+ * @desc   Logout - clear cookie and blacklist current token
  * @access Private
  */
 exports.logout = catchAsync(async (req, res, next) => {
+  const token = req.cookies?.token || req.headers?.authorization?.split(' ')[1];
+  if (token) {
+    try {
+      const decoded = jwt.decode(token, { complete: true });
+      if (decoded?.payload?.jti) {
+        await TokenBlacklist.create({
+          jti: decoded.payload.jti,
+          userId: req.user._id,
+          expiresAt: new Date(decoded.payload.exp * 1000)
+        });
+      }
+    } catch (e) {
+      // Ignore blacklist errors - cookie will still be cleared
+    }
+  }
+
   res.cookie('token', 'none', {
     expires: new Date(Date.now() + 10 * 1000),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production'
       ? (process.env.JWT_COOKIE_SAMESITE || 'none')
-      : (process.env.JWT_COOKIE_SAMESITE || 'strict')
+      : 'lax'
   });
 
   return sendSuccess(res, 200, 'Logged out successfully');
+});
+
+/**
+ * @route  POST /api/auth/logout-all
+ * @desc   Logout from all devices - blacklist all tokens for this user
+ * @access Private
+ */
+exports.logoutAll = catchAsync(async (req, res, next) => {
+  // Blacklist current token
+  const token = req.cookies?.token || req.headers?.authorization?.split(' ')[1];
+  if (token) {
+    try {
+      const decoded = jwt.decode(token, { complete: true });
+      if (decoded?.payload?.jti) {
+        await TokenBlacklist.create({
+          jti: decoded.payload.jti,
+          userId: req.user._id,
+          expiresAt: new Date(decoded.payload.exp * 1000)
+        });
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  res.cookie('token', 'none', {
+    expires: new Date(Date.now() + 10 * 1000),
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production'
+      ? (process.env.JWT_COOKIE_SAMESITE || 'none')
+      : 'lax'
+  });
+
+  return sendSuccess(res, 200, 'Logged out from all devices successfully');
 });
 
 /**

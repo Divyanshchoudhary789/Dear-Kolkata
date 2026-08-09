@@ -537,10 +537,19 @@ exports.placeCODOrder = catchAsync(async (req, res) => {
 exports.handleWebhook = (req, res) => {
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-  // If no webhook secret configured, skip signature verification in development
+  let event;
+  try {
+    const body = req.body;
+    const bodyString = body instanceof Buffer ? body.toString() : JSON.stringify(body);
+    event = body instanceof Buffer ? JSON.parse(bodyString) : body;
+  } catch (error) {
+    console.error('[Webhook] Failed to parse body:', error.message);
+    return res.status(400).json({ success: false, message: 'Invalid webhook payload' });
+  }
+
   if (webhookSecret) {
     const signature  = req.headers['x-razorpay-signature'];
-    const bodyString = JSON.stringify(req.body); // body is already parsed here
+    const bodyString = JSON.stringify(event);
 
     const expectedSig = crypto
       .createHmac('sha256', webhookSecret)
@@ -553,21 +562,16 @@ exports.handleWebhook = (req, res) => {
     }
   }
 
-  const event = req.body;
   const eventType = event?.event;
 
   if (eventType === 'payment.captured') {
     const payment = event.payload?.payment?.entity;
     console.log(`[Webhook] Payment captured: ${payment?.id} for order ${payment?.order_id}`);
-    // Order is created at verify step (frontend-driven flow)
-    // Webhook is a backup confirmation — no DB write needed here unless
-    // you implement a server-side-only flow (without frontend verify call)
   }
 
   if (eventType === 'payment.failed') {
     const payment = event.payload?.payment?.entity;
     console.error(`[Webhook] Payment failed: ${payment?.id} — ${payment?.error_description}`);
-    // Mark any pending order with this gateway order ID as failed
     Order.findOneAndUpdate(
       { 'payment.gatewayOrderId': payment?.order_id, 'payment.status': 'pending' },
       { 'payment.status': 'failed' }

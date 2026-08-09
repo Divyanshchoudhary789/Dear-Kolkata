@@ -1156,11 +1156,17 @@ img { max-width: 100%; display: block; }
     align-items: stretch;
   }
   .pass-banner > div:last-child {
+    width: 100%;
     align-items: center !important;
-    flex-direction: row !important;
-    justify-content: space-between;
+    flex-direction: column !important;
+    justify-content: center;
+    gap: 8px;
   }
-  .btn-pass-action { width: 100%; justify-content: center; }
+  .pass-banner > div:last-child > span {
+    font-size: 22px;
+    line-height: 1;
+  }
+  .btn-pass-action { width: 100%; max-width: 260px; justify-content: center; }
 }
 @media (max-width: 480px) {
   .pass-banner { border-radius: var(--radius-md); }
@@ -1345,7 +1351,16 @@ img { max-width: 100%; display: block; }
 /* ─── 39. PASS BANNER MOBILE ─────────────────────────────────── */
 @media (max-width: 480px) {
   .pass-banner { padding: 20px 16px; gap: 16px; border-radius: var(--radius-md); }
-  .btn-pass-action { width: 100%; justify-content: center; }
+  .pass-banner > div:last-child {
+    width: 100%;
+    align-items: center !important;
+    flex-direction: column !important;
+    gap: 8px;
+  }
+  .pass-banner > div:last-child > span {
+    font-size: 20px;
+  }
+  .btn-pass-action { width: 100%; max-width: 240px; justify-content: center; }
 }
 
 /* ══════════════════════════════════════════════════════════════

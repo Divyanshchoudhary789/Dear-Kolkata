@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Vendor = require('../models/Vendor');
+const TokenBlacklist = require('../models/TokenBlacklist');
 const ApiError = require('../utils/apiError');
 const catchAsync = require('../utils/catchAsync');
 
@@ -22,11 +23,20 @@ const protect = catchAsync(async (req, res, next) => {
   }
 
   try {
+    // Check if token is blacklisted
+    const decoded = jwt.decode(token, { complete: true });
+    if (decoded?.payload?.jti) {
+      const blacklisted = await TokenBlacklist.findOne({ jti: decoded.payload.jti });
+      if (blacklisted) {
+        throw new ApiError(401, 'Token has been revoked. Please login again.');
+      }
+    }
+
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const verified = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get user from token
-    const user = await User.findById(decoded.id).select('-otp');
+    const user = await User.findById(verified.id).select('-otp');
     if (!user || !user.isActive) {
       throw new ApiError(401, 'User no longer exists or is inactive');
     }
@@ -72,6 +82,32 @@ const attachVendor = catchAsync(async (req, res, next) => {
   req.vendor = vendor;
   next();
 });
+
+/**
+ * Restrict staff sub-accounts to allowed paths.
+ * Staff members can only access the redemption terminal and their own profile.
+ * Owner-level access is required for dashboard, orders, payouts, products, coupons, etc.
+ */
+const restrictStaff = (allowedPaths = []) => {
+  return (req, res, next) => {
+    if (!req.vendor) return next();
+
+    const staffAccount = req.vendor.staffAccounts.find(
+      s => s.userId?.toString() === req.user._id.toString() && s.isActive
+    );
+
+    if (!staffAccount) return next(); // Owner — full access
+
+    const currentPath = req.route?.path || req.path || '';
+    const isAllowed = allowedPaths.some(path => currentPath.includes(path));
+
+    if (!isAllowed) {
+      throw new ApiError(403, 'Staff accounts have restricted access. Contact your vendor owner for full access.');
+    }
+
+    next();
+  };
+};
 
 /**
  * Verify Kolkata PIN for geo-restriction
@@ -124,6 +160,7 @@ module.exports = {
   protect,
   restrictTo,
   attachVendor,
+  restrictStaff,
   verifyKolkataPin,
   optionalAuth
 };

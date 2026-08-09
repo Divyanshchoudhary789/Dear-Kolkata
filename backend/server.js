@@ -6,11 +6,19 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const connectDatabase = require('./src/config/database');
 const { errorHandler, notFound } = require('./src/middleware/errorHandler');
+const validateEnv = require('./src/config/validateEnv');
 
 const app = express();
 
-const requiredInProduction = ['MONGO_URI', 'JWT_SECRET', 'FRONTEND_URL'];
+validateEnv();
+
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 if (process.env.NODE_ENV === 'production') {
+  const requiredInProduction = ['MONGO_URI', 'JWT_SECRET', 'FRONTEND_URL'];
   for (const key of requiredInProduction) {
     if (!process.env[key]) throw new Error(`${key} is required in production`);
   }
@@ -23,11 +31,6 @@ app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
-  .split(',')
-  .map(origin => origin.trim())
-  .filter(Boolean);
-
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
@@ -36,6 +39,7 @@ app.use(cors({
   credentials: true
 }));
 
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '10mb' }));
 app.use(cookieParser());
@@ -57,6 +61,11 @@ app.use((req, _res, next) => {
   sanitizeMongoOperators(req.params);
   next();
 });
+
+const { setCsrfToken, validateCsrfToken } = require('./src/middleware/csrf');
+
+app.get('/api/csrf-token', setCsrfToken);
+app.use('/api/', validateCsrfToken);
 
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,

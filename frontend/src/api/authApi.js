@@ -22,6 +22,9 @@ export const adminLogin = (email, password) => api.post('/auth/admin/login', { e
 // Logout (clears cookie)
 export const logout = () => api.post('/auth/logout');
 
+// Logout from all devices (blacklists all tokens)
+export const logoutAll = () => api.post('/auth/logout-all');
+
 // Get current user profile
 export const getMe = () => api.get('/auth/me');
 

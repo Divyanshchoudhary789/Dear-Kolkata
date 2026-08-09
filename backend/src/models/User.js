@@ -63,6 +63,12 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date
   },
+  staffOf: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vendor',
+    default: null,
+    index: true
+  },
   // OTP for authentication
   otp: {
     code: String,
@@ -118,11 +124,14 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 
 // Generate JWT token
 userSchema.methods.generateAuthToken = function() {
+  const crypto = require('crypto');
+  const jti = crypto.randomBytes(16).toString('hex');
   return jwt.sign(
-    { 
-      id: this._id, 
+    {
+      id: this._id,
       role: this.role,
-      phone: this.phone 
+      phone: this.phone,
+      jti
     },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRE || '30d' }

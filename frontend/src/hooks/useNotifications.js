@@ -11,20 +11,20 @@ const useNotifications = (active = false) => {
   const [unreadCount, setUnreadCount]     = useState(0);
   const [loading, setLoading]             = useState(false);
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async (signal) => {
     if (!active) return;
     try {
-      const res = await getNotifications({ limit: 30 });
+      const res = await getNotifications({ limit: 30 }, { signal });
       if (res?.success) {
         setNotifications(res.data.notifications);
       }
     } catch (_) { /* silent — user might be mid-auth */ }
   }, [active]);
 
-  const fetchUnreadCount = useCallback(async () => {
+  const fetchUnreadCount = useCallback(async (signal) => {
     if (!active) return;
     try {
-      const res = await getUnreadCount();
+      const res = await getUnreadCount(undefined, { signal });
       if (res?.success) setUnreadCount(res.data.unreadCount);
     } catch (_) { /* silent */ }
   }, [active]);
@@ -36,13 +36,22 @@ const useNotifications = (active = false) => {
       setUnreadCount(0);
       return;
     }
-    fetchNotifications();
-    fetchUnreadCount();
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    fetchNotifications(signal);
+    fetchUnreadCount(signal);
+
     const id = setInterval(() => {
-      fetchNotifications();
-      fetchUnreadCount();
+      fetchNotifications(signal);
+      fetchUnreadCount(signal);
     }, 30_000);
-    return () => clearInterval(id);
+
+    return () => {
+      clearInterval(id);
+      controller.abort();
+    };
   }, [active, fetchNotifications, fetchUnreadCount]);
 
   const handleMarkAsRead = useCallback(async (id) => {

@@ -4,11 +4,32 @@ const authController = require('../controllers/authController');
 const { protect, restrictTo } = require('../middleware/auth');
 const { validate } = require('../middleware/validation');
 const Joi = require('joi');
+const rateLimit = require('express-rate-limit');
+
+// ─── Strict Rate Limiter for Auth Endpoints ───────────────────────────────
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per window
+  message: { success: false, message: 'Too many authentication attempts. Please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'development' && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip)
+});
+
+const otpLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 3, // 3 OTP requests per minute
+  message: { success: false, message: 'Too many OTP requests. Please wait before requesting again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'development' && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip)
+});
 
 // ─── Public Routes ───────────────────────────────────────────────────────
 
 // Client OTP auth
-router.post('/send-otp', 
+router.post('/send-otp',
+  otpLimiter,
   validate({
     body: Joi.object({
       phone: Joi.string().pattern(/^[6-9]\d{9}$/).required()
@@ -18,6 +39,7 @@ router.post('/send-otp',
 );
 
 router.post('/verify-otp',
+  authLimiter,
   validate({
     body: Joi.object({
       phone: Joi.string().pattern(/^[6-9]\d{9}$/).required(),
@@ -29,6 +51,7 @@ router.post('/verify-otp',
 
 // Kolkata PIN verification
 router.post('/verify-pin',
+  authLimiter,
   validate({
     body: Joi.object({
       pin: Joi.string().pattern(/^700\d{3}$/).required()
@@ -39,6 +62,7 @@ router.post('/verify-pin',
 
 // Vendor login
 router.post('/vendor/login',
+  authLimiter,
   validate({
     body: Joi.object({
       phone: Joi.string().pattern(/^[6-9]\d{9}$/).required(),
@@ -50,6 +74,7 @@ router.post('/vendor/login',
 
 // Admin login
 router.post('/admin/login',
+  authLimiter,
   validate({
     body: Joi.object({
       email: Joi.string().email().required(),
@@ -62,6 +87,7 @@ router.post('/admin/login',
 // ─── Protected Routes ────────────────────────────────────────────────────
 
 router.post('/logout', protect, authController.logout);
+router.post('/logout-all', protect, authController.logoutAll);
 router.get('/me', protect, authController.getMe);
 router.put('/me', protect, authController.updateProfile);
 

@@ -1,6 +1,17 @@
 import React from 'react';
 import { ArrowRight, Loader, Gift, ShoppingBag, ShieldCheck, Percent, Star, Calendar, Store } from 'lucide-react';
 
+// Sanitize user-generated content to prevent XSS
+const sanitizeHTML = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
 /* ── Common Programmatic SVG Ornaments ── */
 
 // 1. Durga Ma Eyes & Bindi (Used on ticket stubs)
@@ -100,8 +111,8 @@ const CouponCard = ({ coupon, userCoupon, context = 'market', onAction, timerTex
   const isExclusive = !!(coupon.isExclusive);
   const value = coupon.value || 0;
   const offerLabel = buildOfferLabel(coupon.type, value);
-  const vendorName = coupon.vendor?.name || (isAdminAuthored ? 'Dear Kolkata' : '');
-  const descLine = coupon.description ? coupon.description.split('.')[0] : '';
+  const vendorName = sanitizeHTML(coupon.vendor?.name || (isAdminAuthored ? 'Dear Kolkata' : ''));
+  const descLine = coupon.description ? sanitizeHTML(coupon.description.split('.')[0]) : '';
   const validUntil = coupon.validityEnd ? fmtDate(coupon.validityEnd) : '';
   const price = coupon.price || 0;
   const couponArtwork = coupon.images?.[0]?.url || (category === 'food' ? '/cat_food.png' : category === 'jewellery' ? '/cat_jewellery.png' : category === 'sarees' || category === 'apparel' ? '/cat_sarees.png' : category === 'luxury' || isAdminAuthored ? '/cat_luxury.png' : '/durga_puja_hero_banner.png');

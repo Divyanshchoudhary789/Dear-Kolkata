@@ -204,7 +204,8 @@ exports.addStaff = catchAsync(async (req, res) => {
     name,
     role:     'vendor',
     password,
-    isActive: true
+    isActive: true,
+    staffOf: req.vendor._id
   });
 
   const updatedVendor = await Vendor.findByIdAndUpdate(req.vendor._id, {
@@ -212,6 +213,7 @@ exports.addStaff = catchAsync(async (req, res) => {
       staffAccounts: {
         name,
         phone,
+        userId: staffUser._id,
         accessLevel: 'redemption-only',
         isActive: true
       }

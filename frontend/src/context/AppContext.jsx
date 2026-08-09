@@ -110,6 +110,9 @@ export const AppProvider = ({ children }) => {
 
   // ─── Boot: fetch user profile when token exists ──────────────────────────
   useEffect(() => {
+    // Fetch CSRF token on app startup
+    api.get('/csrf-token').catch(() => {});
+
     if (!isLoggedIn) return;
     if (justLoggedInRef.current) {
       justLoggedInRef.current = false;
@@ -162,6 +165,15 @@ export const AppProvider = ({ children }) => {
     if (isLoggedIn && currentRole === 'vendor') {
       fetchVendorData();
     }
+  }, [isLoggedIn, currentRole]);
+
+  // Fetch admin data when admin logs in
+  useEffect(() => {
+    if (isLoggedIn && currentRole === 'admin') {
+      fetchAdminVendors();
+      fetchAdminOrders();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn, currentRole]);
 
   // ─── Data Fetchers ───────────────────────────────────────────────────────
@@ -243,16 +255,16 @@ export const AppProvider = ({ children }) => {
     try {
       const res = await orderApiService.getVendorOrders({ limit: 50 });
       if (res?.success) setOrders(res.data.orders || []);
-    } catch (_) {}
+    } catch (e) { console.warn('Vendor orders fetch:', e.message); }
     try {
       const res = await couponApiService.getVendorCoupons({ limit: 50 });
       if (res?.success) setCoupons(res.data.coupons || []);
-    } catch (_) {}
+    } catch (e) { console.warn('Vendor coupons fetch:', e.message); }
     // Fetch vendor products
     try {
       const res = await productApiService.getVendorProducts({ limit: 50 });
       if (res?.success) setProducts(res.data.products || []);
-    } catch (_) {}
+    } catch (e) { console.warn('Vendor products fetch:', e.message); }
   }, []);
 
   // ─── AUTH ACTIONS ────────────────────────────────────────────────────────
@@ -338,10 +350,6 @@ export const AppProvider = ({ children }) => {
         setIsLoggedIn(true);
         setCurrentRole('admin');
         justLoggedInRef.current = true;
-        setTimeout(() => {
-          fetchAdminVendors();
-          fetchAdminOrders();
-        }, 150);
         return { success: true };
       }
       return { success: false, error: 'Login failed' };
@@ -390,7 +398,7 @@ export const AppProvider = ({ children }) => {
     try {
       const res = await adminApiService.getAllVendors({ limit: 100 });
       if (res?.success) setVendors(res.data.vendors || []);
-    } catch (_) {}
+    } catch (e) { console.warn('Admin vendors fetch:', e.message); }
   }, []);
 
   const fetchAdminOrders = useCallback(async (params = {}) => {
