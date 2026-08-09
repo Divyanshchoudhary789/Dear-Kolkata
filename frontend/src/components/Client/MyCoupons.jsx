@@ -3,8 +3,27 @@ import { createPortal } from 'react-dom';
 import { AppContext } from '../../context/AppContext';
 import { CheckCircle, Key, RefreshCw, Loader } from 'lucide-react';
 import { showError } from '../../utils/toast';
+import CouponCard from '../Common/CouponCard';
 
 const pad = (n) => String(n).padStart(2, '0');
+
+const getCouponTheme = (coupon) => {
+  const cat = coupon.category || coupon.vendor?.category || '';
+  if (cat === 'food') return 'theme-crimson';
+  if (cat === 'jewellery') return 'theme-gold';
+  if (cat === 'sarees' || cat === 'apparel') return 'theme-maroon';
+  return 'theme-ivory';
+};
+
+const getCouponImage = (coupon) => {
+  // Exclusive coupons ke liye pehle DB image check karo
+  if (coupon.images?.[0]?.url) return coupon.images[0].url;
+  const cat = coupon.category || coupon.vendor?.category || '';
+  if (cat === 'food') return '/cat_food.png';
+  if (cat === 'jewellery') return '/cat_jewellery.png';
+  if (cat === 'sarees' || cat === 'apparel') return '/cat_sarees.png';
+  return '/durga_puja_hero_banner.png';
+};
 
 const MyCoupons = () => {
   const { userCoupons, generateCouponCode, fetchMyCoupons, loadingCoupons } = useContext(AppContext);
@@ -20,7 +39,8 @@ const MyCoupons = () => {
       const now = Date.now();
       const updated = {};
       userCoupons.forEach(uc => {
-        const expiresAt = uc.code?.expiresAt || uc.expiresAt;
+        // Bug D fix: schema field is code.expiresAt, uc.expiredAt is the cron-set expiry
+        const expiresAt = uc.code?.expiresAt;
         if (uc.status === 'CodeGenerated' && expiresAt) {
           const diff = new Date(expiresAt).getTime() - now;
           updated[uc._id || uc.id] = diff <= 0
@@ -52,16 +72,19 @@ const MyCoupons = () => {
   const getVendor  = (uc) => uc.coupon?.vendor || {};
   const getUCId    = (uc) => uc._id || uc.id;
   const getCode    = (uc) => uc.code?.value   || uc.code;
-  const getExpiry  = (uc) => uc.code?.expiresAt || uc.expiresAt;
 
   const handleGenerate = async (ucId) => {
     setGenerating(ucId);
     const result = await generateCouponCode(ucId);
     setGenerating(null);
     if (result) {
-      // fetchMyCoupons is called inside generateCouponCode in AppContext
-      // Open modal — use result data directly since userCoupons may not be updated yet
-      setModalUC({ ...userCoupons.find(u => getUCId(u) === ucId), code: { value: result.code, expiresAt: result.expiresAt } });
+      // Bug C fix: build modal from API response directly, not stale userCoupons snapshot
+      const baseUC = userCoupons.find(u => getUCId(u) === ucId) || {};
+      setModalUC({
+        ...baseUC,
+        status: 'CodeGenerated',
+        code: { value: result.code, expiresAt: result.expiresAt }
+      });
       setShowModal(true);
     }
   };
@@ -74,8 +97,15 @@ const MyCoupons = () => {
     <div className="animate-fade-in">
       <div className="page-title-banner">
         <div>
-          <h2>My Coupons Locker</h2>
-          <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-muted)' }}>Claimed store promotions and coupon vouchers</p>
+          <h2 className="section-title" style={{ display: 'inline-block' }}>My Coupons Locker</h2>
+          <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-muted)' }}>
+            Claimed store promotions and coupon vouchers
+            {userCoupons.some(uc => uc.coupon?.isExclusive) && (
+              <span style={{ marginLeft: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'linear-gradient(135deg, #D4AF37, #F5D07E)', color: '#382402', fontSize: '10px', fontWeight: '800', padding: '2px 8px', borderRadius: '10px', letterSpacing: '0.5px' }}>
+                ✦ Includes Exclusive Coupons
+              </span>
+            )}
+          </p>
         </div>
         <button
           onClick={fetchMyCoupons}
@@ -95,91 +125,35 @@ const MyCoupons = () => {
         ))}
       </div>
 
-      <div className="grid-marketplace">
+      <div className="ticket-grid">
         {filtered.length === 0 ? (
           <div style={{ gridColumn: '1/-1', textAlign: 'center', backgroundColor: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '48px' }}>
             <p style={{ color: 'var(--text-muted)' }}>No coupons in this category.</p>
           </div>
         ) : filtered.map(uc => {
           const coupon = getCoupon(uc);
-          const vendor = getVendor(uc);
           const ucId   = getUCId(uc);
-          const code   = getCode(uc);
           const timer  = timeRemaining[ucId];
 
+          const handleAction = (param) => {
+            if (uc.status === 'Available') {
+              handleGenerate(ucId);
+            } else if (uc.status === 'CodeGenerated') {
+              setModalUC(uc);
+              setShowModal(true);
+            }
+          };
+
           return (
-            <div key={ucId} className="coupon-card">
-              <div className="coupon-card-header" style={{ borderBottom: '1px dashed var(--border)' }}>
-                <div className="coupon-discount">
-                  {coupon.type === 'percentage' && `${coupon.value}% OFF`}
-                  {coupon.type === 'flat'       && `₹${coupon.value} Back`}
-                  {coupon.type === 'bogo'       && 'B1G1'}
-                </div>
-                <div className="coupon-vendor">{coupon.name}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {vendor.name || 'Store'}
-                </div>
-              </div>
-
-              <div className="coupon-card-body">
-                {/* AVAILABLE */}
-                {uc.status === 'Available' && (
-                  <div style={{ flex: 1 }}>
-                    <p className="coupon-desc" style={{ fontSize: '12px' }}>
-                      Generate your code only when you're at the store — it starts a <strong>{coupon.codeTimerHours || 2}h countdown</strong>.
-                    </p>
-                    <div className="coupon-meta" style={{ fontSize: '11px', marginTop: '10px' }}>
-                      <span>Valid till: {coupon.validityEnd ? new Date(coupon.validityEnd).toLocaleDateString() : '—'}</span>
-                      <span>Timer: {coupon.codeTimerHours || 2}h</span>
-                    </div>
-                    <button className="btn-primary coupon-btn" onClick={() => handleGenerate(ucId)} disabled={generating === ucId}>
-                      {generating === ucId ? <Loader size={14} /> : <Key size={14} style={{ marginRight: '6px' }} />}
-                      {generating === ucId ? 'Generating...' : 'Generate Code'}
-                    </button>
-                  </div>
-                )}
-
-                {/* CODE GENERATED */}
-                {uc.status === 'CodeGenerated' && (
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <div className="countdown-box" style={{ margin: '0 0 16px 0', padding: '12px' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Redemption Countdown</span>
-                      <div className="countdown-timer-digits" style={{ fontSize: '24px', margin: '4px 0' }}>
-                        {timer || '--:--:--'}
-                      </div>
-                    </div>
-                    <button className="btn-gold coupon-btn" style={{ margin: 0 }} onClick={() => { setModalUC(uc); setShowModal(true); }}>
-                      Show Code to Vendor
-                    </button>
-                  </div>
-                )}
-
-                {/* REDEEMED */}
-                {uc.status === 'Redeemed' && (
-                  <div style={{ flex: 1 }}>
-                    <div style={{ backgroundColor: '#ECFDF5', border: '1px solid #DCFCE7', padding: '12px', borderRadius: 'var(--radius-sm)', color: '#065F46', fontSize: '12px', marginBottom: '12px' }}>
-                      <CheckCircle size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                      <strong>Redeemed Successfully</strong>
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                      <div><strong>Date:</strong> {uc.redemption?.redeemedAt ? new Date(uc.redemption.redeemedAt).toLocaleDateString() : '—'}</div>
-                      <div><strong>Bill:</strong> ₹{uc.redemption?.billAmount || 0}</div>
-                      <div><strong>Cashback:</strong> <span style={{ color: '#10B981', fontWeight: '700' }}>+₹{uc.redemption?.cashbackCredited || 0}</span></div>
-                    </div>
-                  </div>
-                )}
-
-                {/* EXPIRED */}
-                {uc.status === 'Expired' && (
-                  <div style={{ flex: 1 }}>
-                    <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FEE2E2', padding: '12px', borderRadius: 'var(--radius-sm)', color: '#991B1B', fontSize: '12px' }}>
-                      <strong>Code Expired</strong>
-                    </div>
-                    <p className="coupon-desc" style={{ fontSize: '12px', marginTop: '10px' }}>The redemption code expired before it was validated at the store.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            <CouponCard
+              key={ucId}
+              coupon={coupon}
+              userCoupon={uc}
+              context="locker"
+              onAction={handleAction}
+              timerText={timer}
+              loading={generating === ucId}
+            />
           );
         })}
       </div>
@@ -194,13 +168,20 @@ const MyCoupons = () => {
             </div>
             <div className="modal-body" style={{ padding: '32px 24px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.5px' }}>
-                {getVendor(modalUC).name || 'Store'}
+                {getVendor(modalUC).name || getCoupon(modalUC).name || 'Dear Kolkata'}
               </span>
               <div className="coupon-ticket-code">{getCode(modalUC)}</div>
               <div style={{ backgroundColor: 'var(--gold-light)', border: '1px dashed var(--gold)', borderRadius: 'var(--radius-sm)', padding: '12px', marginBottom: '16px' }}>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Time Remaining</span>
                 <div style={{ fontSize: '28px', fontFamily: 'monospace', color: 'var(--gold)', fontWeight: '800' }}>
-                  {timeRemaining[getUCId(modalUC)] || '--:--:--'}
+                  {/* Use live timer from state; fallback to direct calculation from expiresAt */}
+                  {timeRemaining[getUCId(modalUC)] || (() => {
+                    const exp = modalUC.code?.expiresAt;
+                    if (!exp) return '--:--:--';
+                    const diff = new Date(exp).getTime() - Date.now();
+                    if (diff <= 0) return '00:00:00';
+                    return `${pad(Math.floor(diff / 3600000))}:${pad(Math.floor((diff % 3600000) / 60000))}:${pad(Math.floor((diff % 60000) / 1000))}`;
+                  })()}
                 </div>
               </div>
               <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>

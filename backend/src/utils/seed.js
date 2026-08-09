@@ -322,31 +322,34 @@ const seed = async () => {
   console.log('Seeding coupons...');
   const couponData = [
     {
-      vendorIndex: 0,
-      name: '10% OFF Jamdani Fest',
-      type: 'percentage',
-      value: 10,
-      price: 50,
-      tags: ['For Your Wife'],
-      category: 'sarees'
-    },
-    {
-      vendorIndex: 1,
-      name: '₹500 OFF Bowbazar Gold',
+      vendorIndex: 1, // Sen Bros Jewellery
+      name: 'FLAT ₹500 OFF',
       type: 'flat',
       value: 500,
       price: 150,
-      tags: ['For Your Loved One'],
-      category: 'jewellery'
+      tags: ['For Your Wife', 'For Your Loved One'],
+      category: 'jewellery',
+      description: 'Flat ₹500 OFF Bowbazar Gold - Shine this Puja. Celebrate in Gold! Valid on Gold Jewellery & Premium Collections on orders above ₹4999.'
     },
     {
-      vendorIndex: 2,
-      name: 'BOGO Rossogolla Sweet Deal',
+      vendorIndex: 2, // Kolkata Sweet Cabin
+      name: 'BUY 1 GET 1 FREE',
       type: 'bogo',
-      value: 'Buy 1 Box Get 1 Free',
-      price: 30,
-      tags: ['For Your Colleagues'],
-      category: 'food'
+      value: 'BUY 1 GET 1 FREE',
+      price: 50,
+      tags: ['For Your Loved One', 'For Your Colleagues'],
+      category: 'food',
+      description: 'Double the Joy, Double the Love! Celebrate Together with premium traditional Bengali sweets and dry fruits.'
+    },
+    {
+      vendorIndex: 0, // Kolkata Handloom & Sarees
+      name: '10% OFF ON ALL ORDERS',
+      type: 'percentage',
+      value: 10,
+      price: 50,
+      tags: ['For Your Wife', 'For Your Loved One'],
+      category: 'sarees',
+      description: 'Celebrate Durga Puja with Blessings & Savings! Flat 10% OFF on all orders of Handloom Sarees.'
     }
   ];
 
@@ -357,7 +360,7 @@ const seed = async () => {
       vendor: vendor._id,
       isAdminAuthored: false,
       name: cd.name,
-      description: `Get a premium coupon valid at ${vendor.name}. Ideal for gift packaging.`,
+      description: cd.description,
       type: cd.type,
       value: cd.value,
       price: cd.price,
@@ -373,23 +376,71 @@ const seed = async () => {
     console.log(`Seeded Coupon: ${cd.name}`);
   }
 
-  // Admin authored coupon
+  // Admin authored coupon - Purple Wallet 20% Cashback
   const adminCoupon = await Coupon.create({
     vendor: null,
     isAdminAuthored: true,
-    name: 'Flat 15% OFF Kolkata Special',
-    description: 'Special admin-authored discount code valid across participating boutiques.',
+    name: 'GET 20% CASHBACK',
+    description: 'Celebrate Puja, Celebrate Cashback! More Shopping, More Joy - 20% Cashback on All Payments.',
     type: 'percentage',
-    value: 15,
+    value: 20,
     price: 100,
     validityStart: new Date(),
     validityEnd: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
     codeTimerHours: 2,
     status: 'Approved',
-    isActive: true
+    isActive: true,
+    category: 'luxury'
   });
   seededCoupons.push(adminCoupon);
   console.log(`Seeded Admin Coupon: ${adminCoupon.name}`);
+
+  // ── Exclusive Feature Coupons (shown on home page banner) ──────────────────
+  console.log('Seeding exclusive home banner coupons...');
+
+  const datingCoupon = await Coupon.create({
+    vendor: null,
+    isAdminAuthored: true,
+    name: 'Durga Puja Dating Coupon',
+    description: 'Your pass to unforgettable Dating & Meetup Events this Pujo! Meet new people, exciting meetups, real connections. Valid for Meetups & Dating Events. Meet. Connect. Celebrate.',
+    type: 'flat',
+    value: 0,
+    price: 99,
+    tags: ['For Your Girlfriend', 'For Your Wife'],
+    validityStart: new Date(),
+    validityEnd: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    codeTimerHours: 2,
+    status: 'Approved',
+    isActive: true,
+    isExclusive: true,
+    category: 'luxury',
+    termsAndConditions: 'Valid for meetups and dating events during Durga Puja. This Pujo, Find your People. Find your Vibe.',
+    images: [{ url: '/exclusive_offer_dating.png', publicId: 'exclusive_dating_local' }]
+  });
+  seededCoupons.push(datingCoupon);
+  console.log(`Seeded Exclusive Coupon: ${datingCoupon.name}`);
+
+  const foodTrailCoupon = await Coupon.create({
+    vendor: null,
+    isAdminAuthored: true,
+    name: 'Puja Food Trail',
+    description: 'Taste Kolkata. One Pass. Multiple Stops. Bengali Sweets, Traditional Bengali Food, Street Food, Iconic Cafes, Puja-Night Bites & Hangouts. Exclusive Food Deals at Participating Outlets! Eat. Explore. Celebrate.',
+    type: 'flat',
+    value: 0,
+    price: 49,
+    tags: ['For Your Loved One', 'For Your Colleagues'],
+    validityStart: new Date(),
+    validityEnd: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    codeTimerHours: 2,
+    status: 'Approved',
+    isActive: true,
+    isExclusive: true,
+    category: 'food',
+    termsAndConditions: 'One Pass. Endless Flavours. Good Food. Good Vibes. Great Memories. Valid at participating outlets during Durga Puja.',
+    images: [{ url: '/exclusive_offer_food.png', publicId: 'exclusive_food_local' }]
+  });
+  seededCoupons.push(foodTrailCoupon);
+  console.log(`Seeded Exclusive Coupon: ${foodTrailCoupon.name}`);
 
   // ─── PACKAGES ────────────────────────────────────────────────────────────
   console.log('Seeding admin packages...');

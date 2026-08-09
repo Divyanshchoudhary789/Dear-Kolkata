@@ -37,6 +37,25 @@ const getAdminIds = async () => {
 // ─── PUBLIC ───────────────────────────────────────────────────────────────────
 
 /**
+ * @route  GET /api/coupons/exclusive
+ * @desc   Home page exclusive banner coupons (isExclusive: true)
+ * @access Public
+ */
+exports.getExclusiveCoupons = catchAsync(async (req, res) => {
+  const now = new Date();
+  const coupons = await Coupon.find({
+    status: 'Approved',
+    isActive: true,
+    isExclusive: true,
+    validityEnd: { $gte: now }
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return sendSuccess(res, 200, 'Exclusive coupons fetched', { coupons });
+});
+
+/**
  * @route  GET /api/coupons
  * @desc   Coupon marketplace (approved, non-expired, active)
  * @access Public
@@ -48,7 +67,8 @@ exports.getAllCoupons = catchAsync(async (req, res) => {
   const query = {
     status: 'Approved',
     isActive: true,
-    validityEnd: { $gte: now }
+    validityEnd: { $gte: now },
+    isExclusive: { $ne: true }
   };
   if (vendor)   query.vendor   = vendor;
   if (tags)     query.tags     = { $in: Array.isArray(tags) ? tags : [tags] };
@@ -104,7 +124,15 @@ exports.purchaseCoupon = catchAsync(async (req, res) => {
     throw new ApiError(400, 'This coupon is sold out');
   }
 
-  // Deduct price if paid coupon (Model A)
+  // ── Duplicate purchase guard ───────────────────────────────────────────────
+  const existing = await UserCoupon.findOne({
+    client: req.user._id,
+    coupon: coupon._id,
+    status: { $in: ['Available', 'CodeGenerated'] }
+  });
+  if (existing) throw new ApiError(400, 'You already own this coupon. Check your Coupons Locker.');
+
+  // ── Deduct price if paid coupon (Model A) ──────────────────────────────────
   if (coupon.price > 0) {
     await debitWallet(
       req.user._id,
@@ -140,7 +168,12 @@ exports.purchaseCoupon = catchAsync(async (req, res) => {
     sendCouponPurchaseEmail(req.user.email, req.user.name, coupon.name, coupon.validityEnd).catch(console.error);
   }
 
-  return sendSuccess(res, 200, 'Coupon added to your locker', { userCoupon });
+  // Populate coupon for the response so frontend can render immediately
+  const populated = await UserCoupon.findById(userCoupon._id)
+    .populate({ path: 'coupon', populate: { path: 'vendor', select: 'name location pin' } })
+    .lean();
+
+  return sendSuccess(res, 200, 'Coupon added to your locker', { userCoupon: populated });
 });
 
 /**
@@ -172,8 +205,10 @@ exports.generateCode = catchAsync(async (req, res) => {
   }
 
   // Generate fresh code
-  const code          = buildCode(coupon.vendor?.name);
-  const timerMs       = coupon.codeTimerHours * 60 * 60 * 1000;
+  // Admin-authored exclusive coupons: use coupon name prefix instead of vendor name
+  const codeName  = coupon.vendor?.name || coupon.name || 'DEAR';
+  const code      = buildCode(codeName);
+  const timerMs   = coupon.codeTimerHours * 60 * 60 * 1000;
   const expiresAt     = new Date(now.getTime() + timerMs);
   const isRegen       = uc.status === 'CodeGenerated';
 
@@ -333,8 +368,12 @@ exports.redeemCoupon = catchAsync(async (req, res) => {
   const coupon = uc.coupon;
 
   // ── Verify vendor ownership ────────────────────────────────────────────────
-  if (!coupon.vendor || coupon.vendor._id.toString() !== req.vendor._id.toString()) {
-    throw new ApiError(403, 'This code belongs to a different store.');
+  // Admin-authored exclusive coupons (isAdminAuthored: true, no vendor) can be
+  // redeemed at ANY participating store — skip vendor ownership check.
+  if (!coupon.isAdminAuthored) {
+    if (!coupon.vendor || coupon.vendor._id.toString() !== req.vendor._id.toString()) {
+      throw new ApiError(403, 'This code belongs to a different store.');
+    }
   }
 
   // ── Check code expiry ──────────────────────────────────────────────────────

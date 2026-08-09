@@ -10,6 +10,9 @@ export const getCouponById = (id)        => api.get(`/coupons/${id}`);
 export const getPackages   = (params = {}) => api.get('/packages', { params });
 export const getPackageById = (id)       => api.get(`/packages/${id}`);
 
+// Exclusive home-banner coupons (isExclusive: true)
+export const getExclusiveCoupons = () => api.get('/coupons/exclusive');
+
 // ── CLIENT ───────────────────────────────────────────────────────────────────
 // Get client's purchased coupons (status filter: Available | CodeGenerated | Redeemed | Expired)
 export const getMyCoupons = (params = {}) => api.get('/coupons/my-coupons', { params });

@@ -55,11 +55,12 @@ export const AppProvider = ({ children }) => {
   const [vendorProfile, setVendorProfile]   = useState(null);
 
   // ─── Catalogue state (server-sourced) ───────────────────────────────────
-  const [categories,   setCategories]   = useState(STATIC_CATEGORIES);
-  const [products,     setProducts]     = useState([]);
-  const [vendors,      setVendors]      = useState([]);
-  const [coupons,      setCoupons]      = useState([]);
-  const [packages,     setPackages]     = useState([]);
+  const [categories,      setCategories]      = useState(STATIC_CATEGORIES);
+  const [products,        setProducts]        = useState([]);
+  const [vendors,         setVendors]         = useState([]);
+  const [coupons,         setCoupons]         = useState([]);
+  const [exclusiveCoupons,setExclusiveCoupons]= useState([]);
+  const [packages,        setPackages]        = useState([]);
   const [orders,       setOrders]       = useState([]);
   const [userCoupons,  setUserCoupons]  = useState([]);
   const [walletBalance,setWalletBalance]= useState(0);
@@ -143,6 +144,7 @@ export const AppProvider = ({ children }) => {
     fetchProducts();
     fetchCategories();
     fetchCoupons();
+    fetchExclusiveCoupons();
     fetchPackages();
   }, []);
 
@@ -189,6 +191,13 @@ export const AppProvider = ({ children }) => {
       const res = await couponApiService.getCoupons(params);
       if (res?.success) setCoupons(res.data.coupons || []);
     } catch (e) { console.warn('Coupons fetch:', e.message); }
+  }, []);
+
+  const fetchExclusiveCoupons = useCallback(async () => {
+    try {
+      const res = await couponApiService.getExclusiveCoupons();
+      if (res?.success) setExclusiveCoupons(res.data.coupons || []);
+    } catch (e) { console.warn('Exclusive coupons fetch:', e.message); }
   }, []);
 
   const fetchPackages = useCallback(async () => {
@@ -675,8 +684,14 @@ export const AppProvider = ({ children }) => {
     try {
       const res = await couponApiService.purchaseCoupon(couponId);
       if (res?.success) {
+        const newUC = res.data.userCoupon;
+        // Optimistic inject — locker dikhne se pehle hi state mein daal do
+        if (newUC) {
+          setUserCoupons(prev => [newUC, ...prev]);
+        }
         showSuccess('Coupon added to your locker!');
-        await Promise.all([fetchMyCoupons(), fetchWallet()]);
+        // Background refresh for consistency + wallet deduction
+        Promise.all([fetchMyCoupons(), fetchWallet()]).catch(() => {});
         return { success: true };
       }
     } catch (e) {
@@ -701,7 +716,8 @@ export const AppProvider = ({ children }) => {
       const res = await couponApiService.redeemCoupon(code, Number(billAmount));
       if (res?.success) {
         showSuccess('Coupon redeemed successfully!');
-        await fetchCoupons();
+        // Refresh client locker so status changes to Redeemed immediately
+        await Promise.all([fetchMyCoupons(), fetchWallet()]);
         return { success: true, ...res.data };
       }
     } catch (e) {
@@ -774,6 +790,7 @@ export const AppProvider = ({ children }) => {
       products,
       vendors,
       coupons,
+      exclusiveCoupons,
       packages,
 
       // Client

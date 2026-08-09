@@ -22,6 +22,7 @@ router.put('/:id/approve',        protect, restrictTo('admin'), cc.approveCoupon
 router.put('/:id/reject',         protect, restrictTo('admin'), cc.rejectCoupon);
 
 // ── Public (LAST — so static paths above are matched first) ───────────────────
+router.get('/exclusive', cc.getExclusiveCoupons);
 router.get('/',    cc.getAllCoupons);
 router.get('/:id', cc.getCouponById);
 

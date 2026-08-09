@@ -124,6 +124,10 @@ const couponSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  isExclusive: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true,

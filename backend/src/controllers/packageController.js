@@ -154,26 +154,67 @@ exports.purchasePackage = catchAsync(async (req, res) => {
  */
 exports.createPackage = catchAsync(async (req, res) => {
   const {
-    name, description, price, couponIds, tags,
+    name, description, price, couponIds = [], exclusiveOffers = [], tags,
     validityStart, validityEnd, redemptionCap,
     displayOrder, termsAndConditions
   } = req.body;
 
-  if (!name || !description || price === undefined || !couponIds || couponIds.length === 0) {
-    throw new ApiError(400, 'name, description, price, and at least one couponId are required');
+  const hasCoupons = (couponIds && couponIds.length > 0) || (exclusiveOffers && exclusiveOffers.length > 0);
+  if (!name || !description || price === undefined || !hasCoupons) {
+    throw new ApiError(400, 'name, description, price, and at least one coupon or exclusive offer are required');
   }
 
   // Validate all coupons exist and are approved
-  const coupons = await Coupon.find({ _id: { $in: couponIds }, status: 'Approved', isActive: true });
-  if (coupons.length !== couponIds.length) {
-    throw new ApiError(400, 'One or more coupons are not found, not approved, or inactive');
+  let validatedCouponIds = [];
+  if (couponIds && couponIds.length > 0) {
+    const coupons = await Coupon.find({ _id: { $in: couponIds }, status: 'Approved', isActive: true });
+    if (coupons.length !== couponIds.length) {
+      throw new ApiError(400, 'One or more coupons are not found, not approved, or inactive');
+    }
+    validatedCouponIds = coupons.map(c => c._id);
   }
+
+  // Create exclusive coupons
+  const createdExclusiveIds = [];
+  if (exclusiveOffers && exclusiveOffers.length > 0) {
+    const farFuture = new Date();
+    farFuture.setFullYear(farFuture.getFullYear() + 10); // 10 years later
+
+    for (const offer of exclusiveOffers) {
+      if (!offer.name || !offer.type || offer.value === undefined) {
+        throw new ApiError(400, 'Exclusive offer name, type, and value are required');
+      }
+
+      const expDate = offer.validityEnd ? new Date(offer.validityEnd) : (validityEnd ? new Date(validityEnd) : farFuture);
+
+      const ec = await Coupon.create({
+        vendor: null, // Admin-authored exclusive offer
+        isAdminAuthored: true,
+        isExclusive: true,
+        name: offer.name,
+        description: offer.description || '',
+        type: offer.type,
+        value: offer.value,
+        validityStart: validityStart ? new Date(validityStart) : new Date(),
+        validityEnd: expDate,
+        codeTimerHours: offer.codeTimerHours || 2,
+        price: 0, // cost is absorbed in package price
+        status: 'Approved', // pre-approved by admin
+        isActive: true,
+        category: offer.category || undefined,
+        tags: tags || []
+      });
+      createdExclusiveIds.push(ec._id);
+    }
+  }
+
+  const allCouponIds = [...validatedCouponIds, ...createdExclusiveIds];
 
   const pkg = await Package.create({
     name,
     description,
     price:          Number(price),
-    couponIds,
+    couponIds:      allCouponIds,
     tags:           tags || [],
     validityStart:  validityStart ? new Date(validityStart) : new Date(),
     validityEnd:    validityEnd   ? new Date(validityEnd)   : undefined,
