@@ -296,6 +296,58 @@ export const AppProvider = ({ children }) => {
       }
       return { success: false, error: 'Failed to send OTP' };
     } catch (e) {
+      // If account not found, tell UI to redirect to register
+      const isNotFound = e.message?.toLowerCase().includes('no account') ||
+                         e.message?.toLowerCase().includes('register');
+      return { success: false, error: e.message, notFound: isNotFound };
+    }
+  };
+
+  // Step 1 of registration — send OTP
+  const registerSendOTP = async (phone, name, email = '') => {
+    try {
+      const res = await authApiService.registerSendOTP(phone, name, email);
+      if (res?.success) {
+        if (import.meta.env.DEV && res.data?.devOtp) {
+          showInfo(`[DEV] Register OTP: ${res.data.devOtp}`);
+          return { success: true, devOtp: res.data.devOtp };
+        }
+        return { success: true };
+      }
+      return { success: false, error: 'Failed to send OTP' };
+    } catch (e) {
+      const alreadyExists = e.message?.toLowerCase().includes('already exists');
+      return { success: false, error: e.message, alreadyExists };
+    }
+  };
+
+  // Step 2 of registration — verify OTP + address → activate + login
+  const registerVerify = async ({ phone, otp, addressLabel, addressText, addressPin }) => {
+    try {
+      const res = await authApiService.registerVerify({ phone, otp, addressLabel, addressText, addressPin });
+      if (res?.success) {
+        const { user } = res.data;
+        localStorage.setItem('dk_session', 'true');
+        localStorage.setItem('dk_user', JSON.stringify(user));
+        setCurrentUser(user);
+        setClientProfile(user);
+        setIsLoggedIn(true);
+        setCurrentRole('client');
+        justLoggedInRef.current = true;
+        showSuccess('Welcome to Dear Kolkata! 🎉 ₹350 bonus added to your wallet.');
+        // Fetch full profile (includes the saved address) in background
+        authApiService.getMe().then(r => {
+          if (r?.success) {
+            const fullUser = r.data.user;
+            localStorage.setItem('dk_user', JSON.stringify(fullUser));
+            setCurrentUser(fullUser);
+            setClientProfile(fullUser);
+          }
+        }).catch(() => {});
+        return { success: true };
+      }
+      return { success: false, error: 'Registration failed' };
+    } catch (e) {
       return { success: false, error: e.message };
     }
   };
@@ -312,7 +364,16 @@ export const AppProvider = ({ children }) => {
         setIsLoggedIn(true);
         setCurrentRole('client');
         justLoggedInRef.current = true;
-        return { success: true, isNew: !user.lastLogin };
+        // Fetch full profile (includes addresses) in background
+        authApiService.getMe().then(r => {
+          if (r?.success) {
+            const fullUser = r.data.user;
+            localStorage.setItem('dk_user', JSON.stringify(fullUser));
+            setCurrentUser(fullUser);
+            setClientProfile(fullUser);
+          }
+        }).catch(() => {});
+        return { success: true };
       }
       return { success: false, error: 'Verification failed' };
     } catch (e) {
@@ -362,9 +423,10 @@ export const AppProvider = ({ children }) => {
     try { await authApiService.logout(); } catch (_) {}
     localStorage.removeItem('dk_session');
     localStorage.removeItem('dk_user');
-    sessionStorage.removeItem('dk_pin_ok');
+    // NOTE: We intentionally keep dk_pin_ok in sessionStorage so the user
+    // doesn't have to re-enter their Kolkata PIN after logging out within
+    // the same browser session.
     setIsLoggedIn(false);
-    setIsKolkataVerified(false);
     setCurrentUser(null);
     setClientProfile(null);
     setCurrentRole('client');
@@ -841,6 +903,8 @@ export const AppProvider = ({ children }) => {
       uploadClientAvatar,
       addClientAddress,
       deleteClientAddress,
+      registerSendOTP,
+      registerVerify,
 
       // Admin
       onboardVendor,

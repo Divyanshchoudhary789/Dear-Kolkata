@@ -7,11 +7,23 @@ import api from './axiosInstance';
 // Verify Kolkata PIN geo-gate
 export const verifyPin = (pin) => api.post('/auth/verify-pin', { pin });
 
-// Send OTP to phone
+// Send OTP to phone (LOGIN — existing users only)
 export const sendOTP = (phone) => api.post('/auth/send-otp', { phone });
 
-// Verify OTP → returns token + user
+// Verify OTP → login existing client
 export const verifyOTP = (phone, otp) => api.post('/auth/verify-otp', { phone, otp });
+
+// ── Registration flow ──────────────────────────────────────────────────────
+
+// Step 1: send OTP for new client registration
+export const registerSendOTP = (phone, name, email = '') =>
+  api.post('/auth/register/send-otp', { phone, name, email });
+
+// Step 2: verify OTP + provide address → activate account + get token
+export const registerVerify = (data) =>
+  api.post('/auth/register/verify', data);
+
+// ── Vendor / Admin ─────────────────────────────────────────────────────────
 
 // Vendor login (phone + password)
 export const vendorLogin = (phone, password) => api.post('/auth/vendor/login', { phone, password });

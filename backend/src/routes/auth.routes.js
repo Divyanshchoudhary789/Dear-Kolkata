@@ -27,7 +27,7 @@ const otpLimiter = rateLimit({
 
 // ─── Public Routes ───────────────────────────────────────────────────────
 
-// Client OTP auth
+// Client OTP login (existing users only)
 router.post('/send-otp',
   otpLimiter,
   validate({
@@ -36,6 +36,34 @@ router.post('/send-otp',
     })
   }),
   authController.sendOTP
+);
+
+// Client Registration — Step 1: send OTP (new users)
+router.post('/register/send-otp',
+  otpLimiter,
+  validate({
+    body: Joi.object({
+      phone: Joi.string().pattern(/^[6-9]\d{9}$/).required(),
+      name:  Joi.string().min(2).max(60).required(),
+      email: Joi.string().email().optional().allow('')
+    })
+  }),
+  authController.registerSendOTP
+);
+
+// Client Registration — Step 2: verify OTP + address → activate account
+router.post('/register/verify',
+  authLimiter,
+  validate({
+    body: Joi.object({
+      phone:        Joi.string().pattern(/^[6-9]\d{9}$/).required(),
+      otp:          Joi.string().length(6).required(),
+      addressLabel: Joi.string().min(1).max(50).required(),
+      addressText:  Joi.string().min(5).max(200).required(),
+      addressPin:   Joi.string().pattern(/^700\d{3}$/).required()
+    })
+  }),
+  authController.registerVerify
 );
 
 router.post('/verify-otp',

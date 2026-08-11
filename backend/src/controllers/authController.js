@@ -52,7 +52,7 @@ const sendTokenResponse = (user, statusCode, res, message) => {
 
 /**
  * @route  POST /api/auth/send-otp
- * @desc   Send OTP to phone number (client sign up / login)
+ * @desc   Send OTP to phone number (login only — for existing users)
  * @access Public
  */
 exports.sendOTP = catchAsync(async (req, res, next) => {
@@ -62,10 +62,10 @@ exports.sendOTP = catchAsync(async (req, res, next) => {
     throw new ApiError(400, 'Valid Indian phone number required');
   }
 
-  // Find or create user
-  let user = await User.findOne({ phone });
+  // Find existing user only (login flow — no auto-create)
+  const user = await User.findOne({ phone });
   if (!user) {
-    user = await User.create({ phone, role: 'client' });
+    throw new ApiError(404, 'No account found with this phone number. Please register first.');
   }
 
   if (!user.isActive) {
@@ -113,8 +113,137 @@ exports.sendOTP = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * @route  POST /api/auth/register/send-otp
+ * @desc   Send OTP for new client registration (phone must NOT already exist)
+ * @access Public
+ */
+exports.registerSendOTP = catchAsync(async (req, res, next) => {
+  const { phone, name, email } = req.body;
+
+  if (!phone || !/^[6-9]\d{9}$/.test(phone)) {
+    throw new ApiError(400, 'Valid Indian phone number required');
+  }
+  if (!name || name.trim().length < 2) {
+    throw new ApiError(400, 'Name must be at least 2 characters');
+  }
+
+  // Check if phone already registered
+  const existing = await User.findOne({ phone });
+  if (existing && existing.isActive) {
+    throw new ApiError(409, 'An account already exists with this phone number. Please login instead.');
+  }
+
+  // Check email uniqueness if provided
+  if (email) {
+    const emailExists = await User.findOne({ email: email.toLowerCase() });
+    if (emailExists) {
+      throw new ApiError(409, 'This email is already registered with another account.');
+    }
+  }
+
+  // Create or reuse incomplete/inactive account for OTP
+  let user = existing;
+  if (!user) {
+    user = await User.create({
+      phone,
+      name: name.trim(),
+      email: email ? email.toLowerCase().trim() : undefined,
+      role: 'client',
+      isActive: false // stays inactive until OTP verified
+    });
+  } else {
+    // Reuse inactive record — update name/email
+    user.name = name.trim();
+    if (email) user.email = email.toLowerCase().trim();
+  }
+
+  // Generate OTP
+  const otp = user.generateOTP();
+  await user.save({ validateBeforeSave: false });
+
+  // Development: return OTP directly
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[DEV] Register OTP for ${phone}: ${otp}`);
+    return sendSuccess(res, 200, 'OTP sent for registration', {
+      devOtp: otp,
+      expiresInMinutes: 10
+    });
+  }
+
+  // Production: send via SMS
+  const smsResult = await smsService.sendOTPViaSMS(phone, otp);
+
+  if (!smsResult.success) {
+    if (email) {
+      const emailResult = await emailService.sendOTPEmail(email, otp, name);
+      if (emailResult.success) {
+        return sendSuccess(res, 200, 'OTP sent to your email (SMS unavailable)', { expiresInMinutes: 10 });
+      }
+    }
+    throw new ApiError(503, 'Unable to send OTP. Please try again.');
+  }
+
+  return sendSuccess(res, 200, 'OTP sent to your phone for verification', { expiresInMinutes: 10 });
+});
+
+/**
+ * @route  POST /api/auth/register/verify
+ * @desc   Verify OTP, save address, activate account, issue token
+ * @access Public
+ */
+exports.registerVerify = catchAsync(async (req, res, next) => {
+  const { phone, otp, addressLabel, addressText, addressPin } = req.body;
+
+  if (!phone || !otp) {
+    throw new ApiError(400, 'Phone and OTP are required');
+  }
+  if (!addressLabel || !addressText || !addressPin) {
+    throw new ApiError(400, 'Delivery address details are required for registration');
+  }
+  if (!/^700\d{3}$/.test(addressPin)) {
+    throw new ApiError(400, 'A valid Kolkata PIN code (700xxx) is required');
+  }
+
+  const user = await User.findOne({ phone }).select('+otp');
+  if (!user) {
+    throw new ApiError(404, 'No pending registration found. Please start again.');
+  }
+
+  const isValid = user.verifyOTP(otp);
+  if (!isValid) {
+    await user.save({ validateBeforeSave: false });
+    throw new ApiError(400, 'Invalid or expired OTP');
+  }
+
+  // Activate account and save address
+  user.isActive = true;
+  user.lastLogin = new Date();
+
+  // Add the initial address
+  user.addresses.push({
+    label: addressLabel.trim(),
+    text: addressText.trim(),
+    pin: addressPin.trim(),
+    isDefault: true
+  });
+
+  await user.save({ validateBeforeSave: false });
+
+  // Grant welcome bonus
+  const welcomeBonus = parseFloat(process.env.WELCOME_BONUS_AMOUNT) || 350;
+  await creditWallet(
+    user._id,
+    welcomeBonus,
+    'welcome_bonus',
+    'Welcome to Dear Kolkata! Sign-up bonus'
+  );
+
+  sendTokenResponse(user, 201, res, 'Account created successfully! Welcome to Dear Kolkata!');
+});
+
+/**
  * @route  POST /api/auth/verify-otp
- * @desc   Verify OTP and log in client
+ * @desc   Verify OTP and log in existing client
  * @access Public
  */
 exports.verifyOTP = catchAsync(async (req, res, next) => {
@@ -126,7 +255,11 @@ exports.verifyOTP = catchAsync(async (req, res, next) => {
 
   const user = await User.findOne({ phone }).select('+otp');
   if (!user) {
-    throw new ApiError(404, 'User not found. Please send OTP first.');
+    throw new ApiError(404, 'No account found with this number. Please register first.');
+  }
+
+  if (!user.isActive) {
+    throw new ApiError(403, 'Account is not active. Please complete registration or contact support.');
   }
 
   const isValid = user.verifyOTP(otp);
@@ -135,22 +268,10 @@ exports.verifyOTP = catchAsync(async (req, res, next) => {
     throw new ApiError(400, 'Invalid or expired OTP');
   }
 
-  // First login check → grant welcome bonus
-  const isFirstLogin = !user.lastLogin;
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
-  if (isFirstLogin && user.role === 'client') {
-    const welcomeBonus = parseFloat(process.env.WELCOME_BONUS_AMOUNT) || 350;
-    await creditWallet(
-      user._id,
-      welcomeBonus,
-      'welcome_bonus',
-      'Welcome to Dear Kolkata! Sign-up bonus'
-    );
-  }
-
-  sendTokenResponse(user, 200, res, isFirstLogin ? 'Welcome to Dear Kolkata!' : 'Login successful');
+  sendTokenResponse(user, 200, res, 'Login successful');
 });
 
 /**

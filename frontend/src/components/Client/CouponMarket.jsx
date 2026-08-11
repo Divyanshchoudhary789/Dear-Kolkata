@@ -24,8 +24,8 @@ const getCouponPoints = (c, index) => {
   return points[index % points.length];
 };
 
-const CouponMarket = ({ setActiveTab }) => {
-  const { coupons, exclusiveCoupons, userCoupons, packages, buyCoupon, buyAdminPackage } = useContext(AppContext);
+const CouponMarket = ({ setActiveTab, onRequireLogin }) => {
+  const { coupons, exclusiveCoupons, userCoupons, packages, buyCoupon, buyAdminPackage, isLoggedIn } = useContext(AppContext);
   const [filterTag, setFilterTag]           = useState('all');
   const [filterCat, setFilterCat]           = useState('all');
   const [loadingId, setLoadingId]           = useState(null);
@@ -64,6 +64,10 @@ const CouponMarket = ({ setActiveTab }) => {
   const isOwned = (couponId) => !!getUserCoupon(couponId);
 
   const handleClaim = async (couponId) => {
+    if (!isLoggedIn) {
+      onRequireLogin?.();
+      return;
+    }
     if (isOwned(couponId)) {
       setActiveTab('coupons');
       return;
@@ -75,6 +79,10 @@ const CouponMarket = ({ setActiveTab }) => {
   };
 
   const handleClaimPkg = async (pkgId) => {
+    if (!isLoggedIn) {
+      onRequireLogin?.();
+      return;
+    }
     setLoadingId(pkgId);
     const res = await buyAdminPackage(pkgId);
     setLoadingId(null);
