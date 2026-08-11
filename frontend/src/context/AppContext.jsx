@@ -6,7 +6,7 @@ import * as couponApiService  from '../api/couponApi';
 import * as walletApiService  from '../api/walletApi';
 import * as adminApiService   from '../api/adminApi';
 import * as clientApiService  from '../api/clientApi';
-import api                    from '../api/axiosInstance';
+import api, { fetchCsrfToken } from '../api/axiosInstance';
 import useNotifications       from '../hooks/useNotifications';
 import { showSuccess, showError, showInfo } from '../utils/toast';
 // NOTE: Actual payment calls are made directly inside Checkout.jsx using paymentApi.
@@ -108,10 +108,12 @@ export const AppProvider = ({ children }) => {
     return () => window.removeEventListener('dk:auth:expired', handleExpiry);
   }, []);
 
-  // ─── Boot: fetch user profile when token exists ──────────────────────────
+  // ─── Boot: fetch CSRF token + user profile ──────────────────────────────
   useEffect(() => {
-    // Fetch CSRF token on app startup
-    api.get('/csrf-token').catch(() => {});
+    // Fetch CSRF token on app startup — critical for all POST/PUT/DELETE requests.
+    // fetchCsrfToken uses native fetch with credentials:include so it works
+    // cross-origin in production (not just same-origin dev proxy).
+    fetchCsrfToken();
 
     if (!isLoggedIn) return;
     if (justLoggedInRef.current) {

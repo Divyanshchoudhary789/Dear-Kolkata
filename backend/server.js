@@ -36,9 +36,13 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
+  // Expose CSRF token header so browsers can read it in cross-origin responses
+  exposedHeaders: ['X-CSRF-Token', 'x-csrf-token'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token', 'X-CSRF-Token'],
 }));
 
+// ── Webhook must receive raw body BEFORE express.json() ──────────────────────
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '10mb' }));
@@ -64,7 +68,12 @@ app.use((req, _res, next) => {
 
 const { setCsrfToken, validateCsrfToken } = require('./src/middleware/csrf');
 
+// ── CSRF token endpoint — MUST be before validateCsrfToken middleware ─────────
+// This route sets the cookie AND returns the token in JSON body.
+// Frontend calls this once on app startup.
 app.get('/api/csrf-token', setCsrfToken);
+
+// All other /api/ routes go through CSRF validation
 app.use('/api/', validateCsrfToken);
 
 const limiter = rateLimit({

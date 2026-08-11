@@ -7,30 +7,70 @@ const getCookie = (name) => {
   return null;
 };
 
+// ── Fetch & cache CSRF token ──────────────────────────────────────────────────
+// In production (cross-origin), the cookie may not be readable by JS if the
+// backend ever sets HttpOnly=true, so we also cache the token from the JSON
+// response body as a reliable fallback.
+let _csrfToken = null;
+
+export const fetchCsrfToken = async () => {
+  try {
+    const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
+    const res = await fetch(`${baseURL}/csrf-token`, {
+      method: 'GET',
+      credentials: 'include',  // send/receive cookies cross-origin
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.csrfToken) {
+        _csrfToken = data.csrfToken;   // cache from response body
+      }
+    }
+  } catch (e) {
+    console.warn('[CSRF] Token fetch failed — cross-origin requests may fail:', e.message);
+  }
+};
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
-  withCredentials: true,
+  withCredentials: true,   // required for cross-origin cookie + CSRF
 });
 
 let authClearLock = false;
 
-// Attach CSRF token from cookie to header
+// ── Attach CSRF token to every mutating request ───────────────────────────────
 api.interceptors.request.use((config) => {
-  const csrfToken = getCookie('dk_csrf_token');
-  if (csrfToken && !config.headers['X-CSRF-Token']) {
-    config.headers['X-CSRF-Token'] = csrfToken;
+  // Try cookie first (works on same-origin / Vite proxy in dev),
+  // fall back to in-memory cache (reliable for cross-origin production).
+  const token = getCookie('dk_csrf_token') || _csrfToken;
+  if (token) {
+    // Use lowercase — consistent with what the backend reads via req.headers[name]
+    config.headers['x-csrf-token'] = token;
   }
   return config;
 });
 
+// ── Auto-retry once on CSRF failure (token may have expired) ─────────────────
 api.interceptors.response.use(
   (response) => response.data,
-  (error) => {
-    const status = error.response?.status;
+  async (error) => {
+    const status  = error.response?.status;
     const message = error.response?.data?.message || error.message || 'Network error';
-    const url = error.config?.url || '';
+
+    // CSRF token expired / missing — refresh and retry once
+    if (status === 403 && error.response?.data?.message?.toLowerCase().includes('csrf')) {
+      if (!error.config._csrfRetried) {
+        error.config._csrfRetried = true;
+        await fetchCsrfToken();
+        const newToken = getCookie('dk_csrf_token') || _csrfToken;
+        if (newToken) {
+          error.config.headers['x-csrf-token'] = newToken;
+          return api(error.config);   // retry original request
+        }
+      }
+    }
 
     if (status === 401) {
       if (!authClearLock) {
