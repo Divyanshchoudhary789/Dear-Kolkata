@@ -145,13 +145,23 @@ export const AppProvider = ({ children }) => {
   }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Fetch public catalogue on mount ────────────────────────────────────
+  // Stagger slightly after CSRF token is fetched to avoid a race where the
+  // first network request races against the CSRF fetch and loses on slow
+  // connections / cold-start backends.
   useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-    fetchCoupons();
-    fetchExclusiveCoupons();
-    fetchPackages();
-  }, []);
+    const load = async () => {
+      // Give CSRF fetch a head-start (it was already kicked off in the boot
+      // useEffect above). A tiny delay ensures the token is in memory before
+      // any POST that might be triggered indirectly during catalogue load.
+      await new Promise(r => setTimeout(r, 50));
+      fetchProducts();
+      fetchCategories();
+      fetchCoupons();
+      fetchExclusiveCoupons();
+      fetchPackages();
+    };
+    load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch wallet + orders when client logs in
   useEffect(() => {
@@ -182,14 +192,34 @@ export const AppProvider = ({ children }) => {
 
   const fetchProducts = useCallback(async (params = {}) => {
     setLoadingProducts(true);
-    try {
-      const res = await productApiService.getProducts(params);
-      if (res?.success) setProducts(res.data.products || []);
-    } catch (e) {
-      console.warn('Products fetch:', e.message);
-    } finally {
-      setLoadingProducts(false);
+    // Retry up to 3 times with backoff — handles cold-start delays on free-tier
+    // hosting (Render/Railway spin-up ~10s) and transient network blips.
+    const MAX_ATTEMPTS = 3;
+    const BACKOFF_MS   = [0, 1500, 3500]; // immediate, 1.5s, 3.5s
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        if (BACKOFF_MS[attempt] > 0) {
+          await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]));
+        }
+        const res = await productApiService.getProducts(params);
+        if (res?.success) {
+          const fetched = res.data.products || [];
+          if (fetched.length > 0 || attempt === MAX_ATTEMPTS - 1) {
+            setProducts(fetched);
+            setLoadingProducts(false);
+            return; // success — stop retrying
+          }
+          // Got empty array on non-final attempt — might be a timing issue, retry
+        }
+      } catch (e) {
+        if (attempt === MAX_ATTEMPTS - 1) {
+          console.warn('Products fetch failed after retries:', e.message);
+        }
+        // else: will retry
+      }
     }
+    setLoadingProducts(false);
   }, []);
 
   const fetchCategories = useCallback(async () => {

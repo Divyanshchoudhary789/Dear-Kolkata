@@ -450,7 +450,28 @@ const ClientHome = ({ setActiveTab, setSelectedProduct, setProductFilter }) => {
         </div>
 
         {loadingProducts && featured.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px' }}><Loader size={28} className="spin" style={{ color: 'var(--crimson)' }} /></div>
+          /* Skeleton cards — same layout as real cards, no blank flash */
+          <div className="trending-product-grid">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="trending-product-card skeleton-card" aria-hidden="true">
+                <div className="trending-product-image skeleton-box" style={{ height: '200px', borderRadius: 'var(--radius-sm) var(--radius-sm) 0 0' }} />
+                <div className="trending-product-body" style={{ padding: '12px' }}>
+                  <div className="skeleton-box" style={{ height: '10px', width: '50%', marginBottom: '8px', borderRadius: '4px' }} />
+                  <div className="skeleton-box" style={{ height: '14px', width: '80%', marginBottom: '12px', borderRadius: '4px' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div className="skeleton-box" style={{ height: '14px', width: '35%', borderRadius: '4px' }} />
+                    <div className="skeleton-box" style={{ height: '14px', width: '20%', borderRadius: '4px' }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : featured.length === 0 ? (
+          /* Products loaded but empty — show friendly message */
+          <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)', fontSize: '14px' }}>
+            <ShoppingBag size={32} style={{ marginBottom: '12px', opacity: 0.3 }} />
+            <p style={{ margin: 0 }}>Products loading… please wait a moment.</p>
+          </div>
         ) : (
           <div className="trending-product-grid">
             {featured.map((prod, idx) => (

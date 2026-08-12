@@ -91,6 +91,31 @@ input, select, textarea { font-family: var(--font-sans); }
 .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1) forwards; }
 .spin { animation: spin 0.8s linear infinite; }
 
+/* ─── Skeleton loading ───────────────────────────────────────────────────── */
+.skeleton-box {
+  background: linear-gradient(
+    90deg,
+    #f0ebe4 0%,
+    #e8e0d8 40%,
+    #f0ebe4 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+.skeleton-card {
+  pointer-events: none;
+  opacity: 0.85;
+}
+.skeleton-card .trending-product-image {
+  background: #f0ebe4;
+  overflow: hidden;
+}
+/* Prevent layout shift — skeleton cards same height as real cards */
+.skeleton-card .trending-product-body {
+  padding: 12px;
+}
+
 /* ─── App shell ──────────────────────────────────────────────────────────── */
 .app-container {
   display: flex;

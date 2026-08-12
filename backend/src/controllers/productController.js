@@ -47,6 +47,11 @@ exports.getAllProducts = catchAsync(async (req, res) => {
     Product.countDocuments(query)
   ]);
 
+  // Cache public product listings for 60 seconds in browser and CDN.
+  // stale-while-revalidate allows serving stale content while re-fetching
+  // in the background — eliminates blank flash on first paint.
+  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+
   return sendSuccess(res, 200, 'Products fetched', {
     products,
     pagination: {
