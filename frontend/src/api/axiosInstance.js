@@ -20,12 +20,20 @@ export const fetchCsrfToken = async () => {
     if (res.ok) {
       const data = await res.json();
       if (data?.csrfToken) {
+        // Always cache in memory — this is the primary source for Safari/ITP
+        // where SameSite=None cross-site cookies are blocked.
         _csrfToken = data.csrfToken;
       }
     }
   } catch (e) {
     console.warn('[CSRF] Token fetch failed:', e.message);
   }
+};
+
+export const getCsrfToken = () => {
+  // Prefer in-memory token (works on all browsers including Safari ITP).
+  // Fall back to cookie only if in-memory is not yet populated.
+  return _csrfToken || getCookie('dk_csrf_token') || null;
 };
 
 const api = axios.create({
@@ -41,7 +49,7 @@ let authClearLock = false;
 
 // ── Attach CSRF token to every mutating request ───────────────────────────────
 api.interceptors.request.use((config) => {
-  const token = getCookie('dk_csrf_token') || _csrfToken;
+  const token = getCsrfToken();
   if (token) {
     config.headers['x-csrf-token'] = token;
   }
@@ -60,7 +68,7 @@ api.interceptors.response.use(
       if (!error.config._csrfRetried) {
         error.config._csrfRetried = true;
         await fetchCsrfToken();
-        const newToken = getCookie('dk_csrf_token') || _csrfToken;
+        const newToken = getCsrfToken();
         if (newToken) {
           error.config.headers['x-csrf-token'] = newToken;
           return api(error.config);

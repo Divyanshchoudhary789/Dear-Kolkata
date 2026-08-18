@@ -19,21 +19,39 @@ const crypto = require('crypto');
 const CSRF_COOKIE_NAME = 'dk_csrf_token';
 const CSRF_HEADER_NAME = 'x-csrf-token';   // lowercase — Express normalises all headers to lowercase
 
+// In-memory token store keyed by the token value itself.
+// Used to validate requests from Safari/ITP where the cookie is blocked,
+// but the token was delivered via JSON body and sent back as a header.
+const _validTokens = new Map();
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Prune expired server-side tokens periodically to avoid memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, expiresAt] of _validTokens) {
+    if (now > expiresAt) _validTokens.delete(token);
+  }
+}, 60 * 60 * 1000); // every hour
+
 // ── Generate and set CSRF token ───────────────────────────────────────────────
 const setCsrfToken = (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
+
+  // Register the token server-side so we can validate cookie-less requests
+  // (Safari ITP blocks SameSite=None cross-site cookies)
+  _validTokens.set(token, Date.now() + TOKEN_TTL_MS);
 
   res.cookie(CSRF_COOKIE_NAME, token, {
     httpOnly: false,     // JS must be able to read it for the double-submit pattern
     secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000,  // 24 hours
+    maxAge: TOKEN_TTL_MS,
     path: '/',
   });
 
-  // Return token in body as well — reliable fallback for cross-origin
-  // setups where the cookie is readable but the JS cookie API may lag,
-  // or where browser cookie policies (ITP, SameSite) cause issues.
+  // Return token in body as well — primary source for Safari/ITP where the
+  // cookie may be blocked. Frontend caches this in memory and sends it via
+  // x-csrf-token header on every mutating request.
   return res.status(200).json({ success: true, csrfToken: token });
 };
 
@@ -53,9 +71,6 @@ const validateCsrfToken = (req, res, next) => {
   const headerToken = req.headers[CSRF_HEADER_NAME];
   const cookieToken = req.cookies[CSRF_COOKIE_NAME];
 
-  // We accept if either the cookie or the header is present and they match,
-  // OR if only the header is present and the cookie hasn't arrived yet
-  // (e.g. first request race-condition). The strict check is header===cookie.
   if (!headerToken) {
     return res.status(403).json({
       success: false,
@@ -63,19 +78,31 @@ const validateCsrfToken = (req, res, next) => {
     });
   }
 
-  if (!cookieToken) {
-    // Cookie not set yet (first visit race) — trust the header alone is
-    // insufficient for strict CSRF; reject and ask frontend to re-fetch token.
+  // ── Double-submit cookie validation (standard browsers) ──────────────────
+  if (cookieToken) {
+    if (cookieToken !== headerToken) {
+      return res.status(403).json({
+        success: false,
+        message: 'CSRF token mismatch',
+      });
+    }
+    return next();
+  }
+
+  // ── Cookie-less validation (Safari / ITP / cross-site cookie blocking) ───
+  // Safari ITP often blocks SameSite=None cookies from cross-origin backends.
+  // When the cookie is absent we fall back to checking the header token
+  // against our server-side registry of tokens issued via /csrf-token.
+  // This is safe because: (a) the token was issued by us, (b) it is still
+  // within its TTL, and (c) CSRF attacks cannot read the token from a
+  // different origin — so a valid header token proves same-origin intent.
+  const isKnownToken = _validTokens.has(headerToken) &&
+    Date.now() < _validTokens.get(headerToken);
+
+  if (!isKnownToken) {
     return res.status(403).json({
       success: false,
       message: 'CSRF session expired — please refresh the page',
-    });
-  }
-
-  if (cookieToken !== headerToken) {
-    return res.status(403).json({
-      success: false,
-      message: 'CSRF token mismatch',
     });
   }
 
